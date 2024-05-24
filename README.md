@@ -1,6 +1,6 @@
 # HoVerNet output format
 Ja używałem HoVerNeta z repo autorów zawsze i oni mają cały pipeline zaimplementowany, który zwraca dla każdego obrazka 
-trzy pliki:
+trzy pliki (możesz obejrzeć w `few/out`):
  - overlay - obrazek z naniesionymi granicami komórek/jąder 
  - mat - scipy mat file, w którym mamy słownik z:
    - inst_map - numpy array w kształcie obrazka w którym każdy piksel ma przypisany numer komórki do której należy
