@@ -42,21 +42,23 @@ def hover_array(path):
     Create numpy array suitable for hover input based on path to directory
     containing image and masks
     """
-    img_path = os.path.join(os.path.join(path, "images", os.listdir(os.path.join(path, "images"))[0]))
-    # pngs in a dataset contain alpha channel (always all ones) - we will use it for instance labels
+    img_path = os.path.join(os.path.join(path, "images",os.listdir(os.path.join(path, "images"))[0]))
     # https://github.com/vqdang/hover_net/tree/master?tab=readme-ov-file#data-format
     hov_input = plt.imread(img_path)
-    # setting 0 in 4th channel as background
+    # in train set images had 4th channel, but in test set not
+    # in train set alpha channel was always 1, ommiting 4th channel
+    hov_input = hov_input[:,:,:3]
+    # adding channel for instance labels
+    hov_input = np.concatenate((hov_input, np.expand_dims(np.zeros(hov_input.shape[:2]), 2)), axis=2)
     masks_path = os.path.join(path, "masks")
-    hov_input[:, :, 3] = 0
 
     # for each mask, add mask's idx + 1 to the 4th channel 
     # assumes that pxels with value 1 in masks do not overlap
     for idx, mask_file in enumerate(os.listdir(masks_path)):
         mask_array = plt.imread(os.path.join(masks_path, mask_file))
         mask_array = mask_array * (idx + 1)
-        hov_input[:, :, 3] += mask_array
-
+        hov_input[:,:,3] += mask_array
+    
     return hov_input
 
 
