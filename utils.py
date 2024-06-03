@@ -1,10 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+import os
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torchvision.io import read_image
-import os
-
 from tqdm import tqdm
 
 
@@ -79,7 +80,65 @@ def create_hover_data(path, input_path=None):
         hov_array = hover_array(example_path)
         np.save(os.path.join(input_path, f"{img_name}.npy"), hov_array)
 
+def encoded_pixels_to_mask(pixels_str, shape):
+    """
+    Parses string with encoded pixels, returns mask (one nuclei) in a form of numpy array
+    """
+    pixels_str = pixels_str.strip().split(" ")
+    ranges_dict = {int(pixels_str[i]): int(pixels_str[i+1]) for i in range(0, len(pixels_str)-1, 2)}
+    arr = np.zeros(shape).flatten()
+    # print(arr)
 
+    for pixel_start, pixel_range in ranges_dict.items():
+        for i in range(pixel_range):
+            arr[pixel_start + i - 1] = 1
+
+    # plt.imshow(np.reshape(arr, shape))
+    # plt.plot()
+    return(np.transpose(np.reshape(arr, shape)))
+
+def labels_csv_to_masks(labels_csv, input_data_dir, out_dir):
+    """
+    Parses csv with encoded pixels and based on the pictures in input_data_dir creates masks.
+    Masks are saved in the out_dir, one per nuclei.
+
+    Parameters:
+        labels_csv:
+            path to csv with encoded pixels
+
+        input_data_dir:
+            path to directory with directories with names (and images) corresponding to ids in
+            labels_csv
+
+        out_dir:
+            directory the encoded masks will be written to
+    """
+    df_labels = pd.read_csv(labels_csv)
+
+    shapes_dict = {}
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+        
+    for img_dir in os.listdir(input_data_dir):
+        img_path = os.path.join(input_data_dir, img_dir, "images")
+        assert len(os.listdir(img_path)) == 1
+        shapes_dict[img_dir] = plt.imread(os.path.join(input_data_dir, img_dir, "images", img_dir+".png")).shape
+        mask_dir = os.path.join(out_dir, img_dir)
+        if not os.path.exists(mask_dir):
+            os.mkdir(mask_dir)
+
+    masks_count = {img_id: 0 for img_id in shapes_dict.keys()}
+    for idx, img_row in df_labels.iterrows():
+        img_id = img_row["ImageId"]
+        try:
+            img_shape = shapes_dict[img_id]
+        except KeyError:
+            print(f"Input picture with id {img_id} not found in the provided directory")
+            continue
+        mask_arr = encoded_pixels_to_mask(img_row["EncodedPixels"], img_shape[:2])
+        matplotlib.image.imsave(os.path.join(out_dir, img_id, f"mask_{masks_count[img_id]}.png"), mask_arr)
+        masks_count[img_id] += 1
+        
 def crop_to_size(img, save_path):
     shape = img.shape
     crop = np.zeros((256, 256, 4))
