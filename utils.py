@@ -7,6 +7,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 from tqdm import tqdm
+import skimage.io
+import skimage.segmentation
 
 
 class CellDataset(Dataset):
@@ -162,3 +164,67 @@ def crop_path(path, save_path):
     for img_name in os.listdir(path):
         img = np.load(os.path.join(path, img_name))
         crop_to_size(img, os.path.join(save_path, img_name))
+
+def mAP_iou(labels, y_pred):
+    fig = plt.figure()
+    plt.imshow(labels)
+    plt.title("Ground truth masks")
+    
+    
+    # Simulate an imperfect submission
+    # offset = 2 # offset pixels
+    # y_pred = labels[offset:, offset:]
+    # y_pred = np.pad(y_pred, ((0, offset), (0, offset)), mode="constant")
+    # y_pred[y_pred == 20] = 0 # Remove one object
+    # y_pred, _, _ = skimage.segmentation.relabel_sequential(y_pred) # Relabel objects
+    
+    # Show simulated predictions
+    fig = plt.figure()
+    plt.imshow(y_pred)
+    plt.title("Simulated imperfect submission")
+    
+    # Compute number of objects
+    true_objects = len(np.unique(labels))
+    pred_objects = len(np.unique(y_pred))
+    print("Number of true objects:", true_objects - 1)
+    print("Number of predicted objects:", pred_objects - 1)
+    
+    # Compute intersection between all objects
+    intersection = np.histogram2d(labels.flatten(), y_pred.flatten(), bins=(true_objects, pred_objects))[0]
+    # print(intersection)
+    
+    # Compute areas (needed for finding the union between all objects)
+    area_true = np.histogram(labels, bins = true_objects)[0]
+    area_pred = np.histogram(y_pred, bins = pred_objects)[0]
+    area_true = np.expand_dims(area_true, -1)
+    area_pred = np.expand_dims(area_pred, 0)
+    
+    # Compute union
+    union = area_true + area_pred - intersection
+    
+    # Exclude background from the analysis
+    intersection = intersection[1:,1:]
+    union = union[1:,1:]
+    union[union == 0] = 1e-9
+    
+    # Compute the intersection over union
+    iou = intersection / union
+    
+    # Precision helper function
+    def precision_at(threshold, iou):
+        matches = iou > threshold
+        true_positives = np.sum(matches, axis=1) == 1   # Correct objects
+        false_positives = np.sum(matches, axis=0) == 0  # Missed objects
+        false_negatives = np.sum(matches, axis=1) == 0  # Extra objects
+        tp, fp, fn = np.sum(true_positives), np.sum(false_positives), np.sum(false_negatives)
+        return tp, fp, fn
+    
+    # Loop over IoU thresholds
+    prec = []
+    print("Thresh\tTP\tFP\tFN\tPrec.")
+    for t in np.arange(0.5, 1.0, 0.05):
+        tp, fp, fn = precision_at(t, iou)
+        p = tp / (tp + fp + fn)
+        print("{:1.3f}\t{}\t{}\t{}\t{:1.3f}".format(t, tp, fp, fn, p))
+        prec.append(p)
+    print("AP\t-\t-\t-\t{:1.3f}".format(np.mean(prec)))
