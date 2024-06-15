@@ -4,6 +4,9 @@ import torch
 import torch.nn.functional as F
 
 from misc.utils import center_pad_to_shape, cropping_center
+from scipy import ndimage
+from torchvision.transforms import transforms, functional
+
 from .utils import crop_to_shape, dice_loss, mse_loss, msge_loss, xentropy_loss
 
 from collections import OrderedDict
@@ -167,30 +170,66 @@ def valid_step(batch_data, run_info):
     return result_dict
 
 
+def rotate(inputs, x, axes=(3, 2)):
+    return torch.from_numpy(ndimage.rotate(inputs, x, axes=axes, reshape=True))
+
 ####
+def transform(imgs):
+    ret = []
+    for tr in [0, 90, 180, 270, -90, -180, -270]:
+        x = rotate(imgs, tr)
+        print(x.shape)
+        ret.append(x)
+    return zip(ret, [0, 90, 180, 270, -90, -180, -270])
+
+
+def transform_rev(imgs, alpha):
+    print(imgs.shape)
+    return rotate(imgs, -alpha, axes=(1, 2))
+
+
 def infer_step(batch_data, model):
 
     ####
     patch_imgs = batch_data
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     patch_imgs_gpu = patch_imgs.to(device).type(torch.float32)  # to NCHW
-    patch_imgs_gpu = patch_imgs_gpu.permute(0, 3, 1, 2).contiguous()
+    patch_imgs_gpu_ = patch_imgs_gpu.permute(0, 3, 1, 2).contiguous()
 
     ####
     model.eval()  # infer mode
 
     # --------------------------------------------------------------
     with torch.no_grad():  # dont compute gradient
-        pred_dict = model(patch_imgs_gpu)
-        pred_dict = OrderedDict(
-            [[k, v.permute(0, 2, 3, 1).contiguous()] for k, v in pred_dict.items()]
-        )
-        pred_dict["np"] = F.softmax(pred_dict["np"], dim=-1)[..., 1:]
-        if "tp" in pred_dict:
-            type_map = F.softmax(pred_dict["tp"], dim=-1)
-            type_map = torch.argmax(type_map, dim=-1, keepdim=True)
-            type_map = type_map.type(torch.float32)
-            pred_dict["tp"] = type_map
+        ret = []
+        ret_hv = []
+        for patch_imgs_gpu, alpha in transform(patch_imgs_gpu_):
+            pred_dict = model(patch_imgs_gpu)
+            pred_dict = OrderedDict(
+                [[k, transform_rev(v.permute(0, 2, 3, 1).contiguous(), alpha)] for k, v in pred_dict.items()]
+            )
+            ret.append(F.softmax(pred_dict["np"], dim=-1)[..., 1:])
+            ret_hv.append(pred_dict['hv'])
+            print(ret[-1].max(), alpha)
+            print(ret[-1].shape, pred_dict["np"].shape)
+            if "tp" in pred_dict:
+                type_map = F.softmax(pred_dict["tp"], dim=-1)
+                type_map = torch.argmax(type_map, dim=-1, keepdim=True)
+                type_map = type_map.type(torch.float32)
+                pred_dict["tp"] = type_map
+        ret = torch.cat(ret, dim=0)
+        ret_hv = torch.cat(ret_hv, dim=0)
+        # print(ret.unique(return_counts=True))
+        pred_dict["np"] = ret.mean(dim=0).unsqueeze(0)
+        pred_dict["hv"] = ret_hv.mean(dim=0).unsqueeze(0)
+        print(pred_dict.keys())
+        print([x.shape for x in pred_dict.values()])
+        # fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+        # axs[0].imshow(pred_dict['np'].squeeze(0).squeeze(-1))
+        # axs[1].imshow(pred_dict['hv'].squeeze(0)[..., 0])
+        # axs[2].imshow(pred_dict['hv'].squeeze(0)[..., 1])
+        # plt.show()
+        # print(pred_dict['np'].unique(return_counts=True))
         pred_output = torch.cat(list(pred_dict.values()), -1)
 
     # * Its up to user to define the protocol to process the raw output per step!
