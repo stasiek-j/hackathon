@@ -7,15 +7,15 @@ import matplotlib.pyplot as plt
 
 def aggregate_file(file, min_t, max_t, step):
     im = np.zeros_like(file)
-    ims = []
-    for thr in np.arange(min_t, max_t, step=step):
+    fig, axs = plt.subplots(nrows=1, ncols=len(np.arange(min_t, max_t+step/2, step=step)), figsize=(120, 5))
+    ax = np.ravel(axs)
+    i = 0
+    for thr in np.arange(min_t, max_t+step/2, step=step):
         im += file > thr
-        ims.append((file > thr, thr))
-    fig, axs = plt.subplots(nrows=1, ncols=len(ims), figsize=(120, 5))
-    for i, ax in enumerate(axs):
-        ax.imshow(ims[i][0])
-        ax.title.set_text('Thr:  {}'.format(ims[i][1]))
-        ax.axis('off')
+        ax[i].imshow(file > thr)
+        ax[i].title.set_text('Thr:  {}'.format(thr))
+        ax[i].axis('off')
+        i += 1
     plt.show()
     return im
 
